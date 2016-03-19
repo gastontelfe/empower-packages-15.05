@@ -8,9 +8,9 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=empower-agent
-PKG_VERSION:=20160228
+PKG_VERSION:=20160319
 PKG_RELEASE:=1
-PKG_REV:=641b13bc19934820cc5db91237f067c1a2dbf1f3
+PKG_REV:=a7247755871b105c268e7a9f497fc9bf6ae99acf
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.bz2
 PKG_SOURCE_URL:=https://github.com/rriggio/empower-agent.git
@@ -62,7 +62,6 @@ define Build/Compile
 		$(STAGING_DIR_HOST)/bin/click-mkmindriver -p $(PKG_NAME) -C $(STAGING_DIR_HOST) \
 		-f $(PKG_BUILD_DIR)/elements/empower/samples/empower.click \
 		-A --all -E Discard -E Print -E PrintWifi -E Strip -E Null -e SetTXRate -e SetTXRateHT \
-		-E EmpowerPowerSaveBuffer; \
 	);
 	$(call Build/Install/Default, MINDRIVER=$(PKG_NAME) install)
 endef

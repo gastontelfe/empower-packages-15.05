@@ -107,10 +107,6 @@ start() {
     config_get MASTER_PORT general master_port "4433"
     config_get INTERFACE general interface "empower0"
     config_get NETWORK general network "wan"
-    config_get_bool STATIC_RATE general static_rate false
-    config_get_bool NO_RX_STATS general no_rx_stats false
-    config_get_bool NO_STATS general no_stats false
-    config_get_bool NO_SIGNALLING_STATS general no_signalling_stats false
     config_get_bool DEBUG general debug false
 
     config_list_foreach general debugfs append_debugfs
@@ -130,10 +126,6 @@ start() {
     OPTS=""
 
     [ $DEBUG == 1 ] && OPTS="$OPTS -d"
-    [ $STATIC_RATE == 1 ] && OPTS="$OPTS -s"
-    [ $NO_RX_STATS == 1 ] && OPTS="$OPTS -r"
-    [ $NO_STATS == 1 ] && OPTS="$OPTS -c"
-    [ $NO_SIGNALLING_STATS == 1 ] && OPTS="$OPTS -b"
 
     empower_config.sh -o "$BRIDGE" -a "$MASTER_IP" -p "$MASTER_PORT" -i "$IFNAMES" -f "$DEBUGFS" -v "$INTERFACE" $OPTS > /tmp/empower.click 2>&1
 

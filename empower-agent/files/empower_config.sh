@@ -37,13 +37,9 @@ IFNAMES=
 DEBUGFS=
 VIRTUAL_IFNAME=
 DEBUG="false"
-STATIC=0
-NO_STATS=0
-NO_RX_STATS=0
-NO_SIGNALLING_STATS=0
 
 usage() {
-    echo "Usage: $0 -o <BRIDGE> -a <MASTER_IP> -p <MASTER_PORT> -i <IFNAMES> -f <DEBUGFS> -v <VIRTUAL_IFNAME> [-d -s -r -c -b]"
+    echo "Usage: $0 -o <BRIDGE> -a <MASTER_IP> -p <MASTER_PORT> -i <IFNAMES> -f <DEBUGFS> -v <VIRTUAL_IFNAME> [-d]"
     exit 1
 }
 
@@ -64,14 +60,6 @@ do
       ;;
     d) DEBUG="true"
       ;;
-    s) STATIC=1
-      ;;
-    r) NO_RX_STATS=1
-      ;;
-    c) NO_STATS=1
-      ;;
-    b) NO_SIGNALLING_STATS=1
-      ;;
     h) usage
       ;;
     esac
@@ -81,126 +69,44 @@ done
     usage
 }
 
-SUPPORTED_CHANNELS=""
 CHANNELS=""
 HWADDR=""
 
 for IFNAME in $IFNAMES; do
 
-	WIPHY=$(iw dev $IFNAME info | sed -n 's/^.*wiphy \([0-9]*\).*/\1/p')
-
-	WIPHY_CHANNELS=$(iw phy phy$WIPHY info |  sed -n 's/^.* \([0-9]*\) MHz \[\([0-9]*\)\] ([0-9.]* dBm).*/\2/p')
-	CHANNEL=$(iw dev $IFNAME info | sed -n 's/^.*channel \([0-9]*\) (\([0-9]*\) MHz).*/\1/p')
-	BAND=$(iw dev $IFNAME info | sed -n 's/^.*channel \([0-9]*\) (\([0-9]*\) MHz), width: \([0-9]*\) MHz.*/\3/p')
+	CHANNEL=$(/usr/sbin/iw dev $IFNAME info | sed -n 's/^.*channel \([0-9]*\) (\([0-9]*\) MHz).*/\1/p')
+	BAND=$(/usr/sbin/iw dev $IFNAME info | sed -n 's/^.*channel \([0-9]*\) (\([0-9]*\) MHz), width: \([0-9]*\) MHz.*/\3/p')
 	HWADDR=$(/sbin/ifconfig $IFNAME 2>&1 | sed -n 's/^.*HWaddr \([0-9A-Za-z\-]*\).*/\1/p' | sed -e 's/\-/:/g' | cut -c1-17)
-
 	iw dev $IFNAME info | grep "no HT" -q && HT="" || HT="HT"
-
-	for WIPHY_CHANNEL in $WIPHY_CHANNELS; do
-		SUPPORTED_CHANNELS="$SUPPORTED_CHANNELS $WIPHY_CHANNEL/${HT}${BAND}"
-	done
-	
 	CHANNELS="$CHANNELS $CHANNEL/${HT}${BAND}"
-	
 	HWADDRS="$HWADDRS $HWADDR"
 
 done
 
 WTP=$(/sbin/ifconfig $BRIDGE 2>&1 | sed -n 's/^.*HWaddr \([0-9A-Za-z\:]*\).*/\1/p')
 
-UNIQUE=$(echo "$SUPPORTED_CHANNELS" | tr ' ' '\n' | sort -u -k2 | sort -n )
-RE_STRING=""
-
-for CHANNEL in $UNIQUE; do
-	RE_STRING="$RE_STRING ${CHANNEL}"
-	IDX=0
-	for ACTIVE in $CHANNELS; do
-		if [ $ACTIVE = $CHANNEL ]; then
-			RE_STRING="${RE_STRING}/${IDX}"
-		fi	
-		IDX=$(($IDX+1))
-	done
-done
-
-if [ "x$HT" != "x" ]; then
-
-	echo """elementclass RateControl {
+echo """elementclass RateControl {
   \$rates,\$ht_rates|
 
   filter_tx :: FilterTX()
 
-  input -> filter_tx -> output;"""
+  input -> filter_tx -> output;
 
-  if [ $STATIC == 0 ]; then
-
-echo """  rate_control :: Minstrel(OFFSET 4, RT \$rates, RT_HT \$ht_rates);
+  rate_control :: Minstrel(OFFSET 4, RT \$rates, RT_HT \$ht_rates);
   filter_tx [1] -> [1] rate_control [1] -> Discard();
-  input [1] -> rate_control -> [1] output;"""
+  input [1] -> rate_control -> [1] output;
 
-  else
-
-echo """  rate_control :: SetTXRateHT(OFFSET 4, MCS 7);
-  input [1] -> rate_control -> [1] output;"""
-
-  fi
-
-echo """
 };
 
-rates :: AvailableRates(DEFAULT 2 4 11 22 12 18 24 36 48 72 96 108);
-rates_ht :: AvailableRates(DEFAULT 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15);
-"""
+ControlSocket(\"TCP\", 7777);
 
-else
-
-	echo """elementclass RateControl {
-  \$rates|
-
-  filter_tx :: FilterTX()
-  input -> filter_tx -> output;"""
-
-  if [ $STATIC == 0 ]; then
-
-echo """  rate_control :: Minstrel(OFFSET 4, RT \$rates);
-  filter_tx [1] -> [1] rate_control [1] -> Discard();
-  input [1] -> rate_control -> [1] output;"""
-
-  else
-
-echo """  rate_control :: SetTXRate(OFFSET 4, RATE 108);
-  input [1] -> rate_control -> [1] output;"""
-
-  fi
-
-echo """
-};
-
-rates :: AvailableRates(DEFAULT 12 18 24 36 48 72 96 108);
-"""
-
-fi
-
-echo """re :: EmpowerResourceElements($RE_STRING);
-
-ControlSocket(\"TCP\", 7777);"""
-
-if [ $NO_RX_STATS == 0 ]; then
-  
-  echo """ers :: EmpowerRXStats(EL el)
+ers :: EmpowerRXStats(EL el)
 
 wifi_cl :: Classifier(0/08%0c,  // data
                       0/00%0c); // mgt
 
-ers -> wifi_cl;"""
+ers -> wifi_cl;
 
-else
-
-  echo """wifi_cl :: Classifier(0/08%0c,  // data
-                      0/00%0c); // mgt"""
-
-fi
-
-echo """
 switch_mngt :: PaintSwitch();
 switch_data :: PaintSwitch();
 """
@@ -211,28 +117,33 @@ for IFNAME in $IFNAMES; do
 
 	RCS="$RCS rc_$IDX/rate_control"
 	FREQ=$(iw dev $IFNAME info | sed -n 's/^.*channel \([0-9]*\) (\([0-9]*\) MHz).*/\2/p')
+	CHANNEL=$(iw dev $IFNAME info | sed -n 's/^.*channel \([0-9]*\) (\([0-9]*\) MHz).*/\1/p')
 
-	if [ "x$HT" != "x" ]; then
-		echo "rc_$IDX :: RateControl(rates, rates_ht);"
+	if [ "$CHANNEL" -gt "14" ]; then
+		RATES="DEFAULT 12 18 24 36 48 72 96 108"
 	else
-		echo "rc_$IDX :: RateControl(rates);"
+		RATES="DEFAULT 2 4 11 22 12 18 24 36 48 72 96 108"
 	fi
 
-	echo """
+	if [ "x$HT" != "x" ]; then
+		RATES_HT="DEFAULT 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15"
+	else
+		RATES_HT=""
+	fi
+
+	echo """rates_$IDX :: AvailableRates($RATES);
+rates_ht_$IDX :: AvailableRates($RATES_HT);
+
+rc_$IDX :: RateControl(rates_$IDX, rates_ht_$IDX);
+
 FromDevice($IFNAME, PROMISC false, OUTBOUND true, SNIFFER false)
   -> RadiotapDecap()
   -> FilterPhyErr()
   -> rc_$IDX
   -> WifiDupeFilter()
-  -> Paint($IDX)"""
+  -> Paint($IDX)
+  -> ers;
 
-if [ $NO_RX_STATS == 0 ]; then
-  echo """  -> ers;"""
-else
-  echo """  -> wifi_cl;"""
-fi
-
-echo """
 sched_$IDX :: PrioSched()
   -> WifiSeq()
   -> [1] rc_$IDX [1]
@@ -253,56 +164,30 @@ switch_data[$IDX]
 done
 
 echo """FromHost($VIRTUAL_IFNAME)
-  -> wifi_encap :: EmpowerWifiEncap(EL el,"""
-
-if [ $NO_STATS == 1 ]; then
-	echo "                      NO_STATS true,"
-fi
-
-echo """                      DEBUG $DEBUG)
+  -> wifi_encap :: EmpowerWifiEncap(EL el, DEBUG $DEBUG)
   -> switch_data;
 
-ctrl :: Socket(TCP, $MASTER_IP, $MASTER_PORT, CLIENT true, VERBOSE true, RECONNECT_CALL el.reconnect)"""
-
-if [ $NO_SIGNALLING_STATS == 0 ]; then
-  echo """    -> downlink :: Counter()"""
-fi
-
-echo """    -> el :: EmpowerLVAPManager(HWADDRS \"$HWADDRS\",
+ctrl :: Socket(TCP, $MASTER_IP, $MASTER_PORT, CLIENT true, VERBOSE true, RECONNECT_CALL el.reconnect)
+    -> downlink :: Counter()
+    -> el :: EmpowerLVAPManager(EMPOWER_IFACE $VIRTUAL_IFNAME,
+                                HWADDRS \"$HWADDRS\",
                                 WTP $WTP,
                                 EBS ebs,
                                 EAUTHR eauthr,
                                 EASSOR eassor,
-				RE re,
+				RES \"$CHANNELS\",
                                 RCS \"$RCS\",
                                 PERIOD 5000,
-                                DEBUGFS \"$DEBUGFS\","""
-
-if [ $NO_RX_STATS == 0 ]; then
-  echo """                                ERS ers,"""
-fi
-
-if [ $NO_SIGNALLING_STATS == 0 ]; then
-  echo """                                UPLINK uplink,"""
-  echo """                                DOWNLINK downlink,"""
-fi
-
-echo """                                DEBUG $DEBUG)"""
-
-if [ $NO_SIGNALLING_STATS == 0 ]; then
-  echo """    -> uplink :: Counter()"""
-fi
-
-echo """    -> ctrl;
+                                DEBUGFS \"$DEBUGFS\",
+                                ERS ers,
+                                UPLINK uplink,
+                                DOWNLINK downlink,
+                                DEBUG $DEBUG)
+    -> uplink :: Counter()
+    -> ctrl;
 
   wifi_cl [0]
-    -> wifi_decap :: EmpowerWifiDecap(EL el,"""
-
-if [ $NO_STATS == 1 ]; then
-	echo "                      NO_STATS true,"
-fi
-
-echo """                        DEBUG $DEBUG)
+    -> wifi_decap :: EmpowerWifiDecap(EL el, DEBUG $DEBUG)
     -> ToHost($VIRTUAL_IFNAME);
 
   wifi_decap [1] -> wifi_encap;
@@ -316,12 +201,7 @@ echo """                        DEBUG $DEBUG)
                             0/a0%f0); // disassoc
 
   mgt_cl [0]
-    -> ebs :: EmpowerBeaconSource(RT rates,"""
-	[ "x$HT" != "x" ] && echo "                                  RT_HT rates_ht,"	
-
-	echo """                                  EL el,
-                                  PERIOD 100, 
-                                  DEBUG $DEBUG)
+    -> ebs :: EmpowerBeaconSource(EL el, PERIOD 100, DEBUG $DEBUG)
     -> switch_mngt;
 
   mgt_cl [1]
@@ -329,12 +209,7 @@ echo """                        DEBUG $DEBUG)
     -> switch_mngt;
 
   mgt_cl [2]
-    -> eassor :: EmpowerAssociationResponder(RT rates,"""
-
-	[ "x$HT" != "x" ] && echo "                                             RT_HT rates_ht,"	
-
-	echo """                                             EL el,
-                                             DEBUG $DEBUG)
+    -> eassor :: EmpowerAssociationResponder(EL el, DEBUG $DEBUG)
     -> switch_mngt;
 
   mgt_cl [3]
@@ -347,6 +222,5 @@ echo """                        DEBUG $DEBUG)
   mgt_cl [5]
     ->  EmpowerDisassocResponder(EL el, DEBUG $DEBUG)
     ->Discard();
-
 """
 
