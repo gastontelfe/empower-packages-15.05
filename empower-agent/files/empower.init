@@ -115,7 +115,7 @@ start() {
     # fetch network parameters
     config_load network
     config_get BRIDGE $NETWORK ifname
-    BRIDGE="br-ovs"
+
     # generate click config
     logger -t "$NAME" "ip: $MASTER_IP"
     logger -t "$NAME" "port: $MASTER_PORT"
@@ -183,7 +183,6 @@ stop() {
     # fetch network parameters
     config_load network
     config_get BRIDGE $NETWORK ifname
-    BRIDGE="br-ovs"
     # del virtual ap interface from bridge
     ovs-vsctl del-port $BRIDGE $INTERFACE
     # stop click
