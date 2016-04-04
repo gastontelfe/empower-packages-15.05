@@ -98,6 +98,7 @@ echo """elementclass RateControl {
 
 };
 
+ChatterSocket(\"TCP\", 7778);
 ControlSocket(\"TCP\", 7777);
 
 ers :: EmpowerRXStats(EL el)
